@@ -100,7 +100,7 @@ def generate_list_rule(element_type):
     """
     rule_name = f"{map_pydantic_type_to_gbnf(element_type)}-list"
     element_rule = map_pydantic_type_to_gbnf(element_type)
-    list_rule = rf'{rule_name} ::= "<items>" ws ("<item>" ws {element_rule} ws "</item>" ws)* "</items>"'
+    list_rule = rf'{rule_name} ::= "<items>" "\\n" ("<item>" "\\n" {element_rule} "\\n" "</item>" "\\n")* "</items>" "\\n"'
     return list_rule
 
 
@@ -110,16 +110,16 @@ def get_members_structure(cls, rule_name):
         members = [f'"{member.value}"' for name, member in cls.__members__.items()]
         return f"{cls.__name__} ::= " + " | ".join(members)
     if cls.__annotations__ and cls.__annotations__ != {}:
-        result = f'{rule_name} ::= "<{rule_name}>"'
-        # Modify for XML structure
+        result = f'{rule_name} ::= "<{rule_name}>" "\\n"'
+        # Modify for XML structure with explicit newlines for all tags
         members = [
-            f'  "<{name}>"  {map_pydantic_type_to_gbnf(param_type)}  "</{name}>"'
+            f'"<{name}>" "\\n" {map_pydantic_type_to_gbnf(param_type)} "\\n" "</{name}>" "\\n"'
             for name, param_type in cls.__annotations__.items()
             if name != "self"
         ]
 
         result += ' '.join(members)
-        result += f'  "</{rule_name}>"'
+        result += f'"</{rule_name}>" "\\n"'
         return result
     if rule_name == "custom-class-any":
         result = f"{rule_name} ::= "
@@ -128,16 +128,16 @@ def get_members_structure(cls, rule_name):
 
     init_signature = inspect.signature(cls.__init__)
     parameters = init_signature.parameters
-    result = f'{rule_name} ::=  "<{rule_name}>"'
-    # Modify for XML structure
+    result = f'{rule_name} ::= "<{rule_name}>" "\\n"'
+    # Modify for XML structure with explicit newlines for all tags
     members = [
-        f'  "<{name}>"  {map_pydantic_type_to_gbnf(param.annotation)}  "</{name}>"'
+        f'"<{name}>" "\\n" {map_pydantic_type_to_gbnf(param.annotation)} "\\n" "</{name}>" "\\n"'
         for name, param in parameters.items()
         if name != "self" and param.annotation != inspect.Parameter.empty
     ]
 
     result += ' '.join(members)
-    result += f'  "</{rule_name}>"'
+    result += f'"</{rule_name}>" "\\n"'
     return result
 
 
@@ -326,7 +326,7 @@ def generate_gbnf_rule_for_type(
             model_name, f"{field_name}Element", element_type, is_optional, processed_models, created_rules
         )
         rules.extend(additional_rules)
-        array_rule = f"""{model_name}{field_name} ::= "<items>" ws ("<item>" ws {element_rule_name} ws "</item>" ws)* "</items>" """
+        array_rule = f"""{model_name}{field_name} ::= "<items>" "\\n" ("<item>" "\\n" {element_rule_name} "\\n" "</item>" "\\n")* "</items>" "\\n" """
         rules.append(array_rule)
         gbnf_type, rules = model_name + field_name, rules
 
@@ -336,7 +336,7 @@ def generate_gbnf_rule_for_type(
             model_name, f"{field_name}Element", element_type, is_optional, processed_models, created_rules
         )
         rules.extend(additional_rules)
-        array_rule = f"""{model_name}{field_name} ::= "<items>" ws ("<item>" ws {element_rule_name} ws "</item>" ws)* "</items>" """
+        array_rule = f"""{model_name}{field_name} ::= "<items>" "\\n" ("<item>" "\\n" {element_rule_name} "\\n" "</item>" "\\n")* "</items>" "\\n" """
         rules.append(array_rule)
         gbnf_type, rules = model_name + field_name, rules
 
@@ -351,7 +351,7 @@ def generate_gbnf_rule_for_type(
         additional_value_type, additional_value_rules = generate_gbnf_rule_for_type(
             model_name, f"{field_name}-value-type", value_type, is_optional, processed_models, created_rules
         )
-        gbnf_type = rf'{gbnf_type} ::= "<dictionary>"  ( "<entry>" "<key>" {additional_key_type} "</key>" "<value>" {additional_value_type} "</value>" "</entry>" ("\n" ws "<entry>" "<key>" {additional_key_type} "</key>" "<value>" {additional_value_type} "</value>" "</entry>")*  )? "</dictionary>" '
+        gbnf_type = rf'{gbnf_type} ::= "<dictionary>" "\\n" ("<entry>" "\\n" "<key>" "\\n" {additional_key_type} "\\n" "</key>" "\\n" "<value>" "\\n" {additional_value_type} "\\n" "</value>" "\\n" "</entry>" "\\n")* "</dictionary>" "\\n"'
 
         rules.extend(additional_key_rules)
         rules.extend(additional_value_rules)
@@ -530,15 +530,15 @@ def generate_gbnf_grammar(
         if not look_for_markdown_code_block and not look_for_triple_quoted_string:
             if rule_name not in created_rules:
                 created_rules[rule_name] = additional_rules
-            # XML Format with exact field names
-            model_rule_parts.append(f' ws "<{field_name}>" ws {rule_name} ws "</{field_name}>"')
+            # XML Format with exact field names and newlines after every tag
+            model_rule_parts.append(f'"<{field_name}>" "\\n" {rule_name} "\\n" "</{field_name}>" "\\n"')
             nested_rules.extend(additional_rules)
         else:
             has_triple_quoted_string = look_for_triple_quoted_string
             has_markdown_code_block = look_for_markdown_code_block
 
-    fields_joined = r' "\n" '.join(model_rule_parts)
-    model_rule = rf'{model_name} ::= "<{model_name}>" "\n" {fields_joined} "\n" ws "</{model_name}>"'
+    fields_joined = ' '.join(model_rule_parts)
+    model_rule = rf'{model_name} ::= "<{model_name}>" "\\n" {fields_joined} "</{model_name}>" "\\n"'
 
     has_special_string = False
     if has_triple_quoted_string:
@@ -664,6 +664,7 @@ boolean ::= "true" | "false"
 null ::= "null"
 string ::= ([^<])*
 ws ::= [ \t\n]{0,2}
+nl ::= "\n"
 float ::= "-"? [0-9]+ ("." [0-9]+)?
 integer ::= [0-9]+
 """
@@ -673,17 +674,9 @@ integer ::= [0-9]+
         any_block = """
 value ::= object | array | string | number | boolean | null
 
-object ::=
-  "<object>" ws (
-            "<field>" string "</field>" "<value>" ws value "</value>"
-    ("," ws "<field>" string "</field>" "<value>" ws value "</value>")*
-  )? "</object>" ws
+object ::= "<object>" "\\n" ("<field>" "\\n" string "\\n" "</field>" "\\n" "<value>" "\\n" value "\\n" "</value>" "\\n")* "</object>" "\\n"
 
-array  ::=
-  "<array>" ws (
-            value
-    ("," ws value)*
-  )? "</array>" ws
+array ::= "<array>" "\\n" (value "\\n")* "</array>" "\\n"
 
 number ::= integer | float"""
 
