@@ -100,14 +100,14 @@ def format_model_and_field_name(model_name: str) -> str:
 
 def generate_list_rule(element_type):
     """
-    Generate a GBNF rule for a list of a given element type.
+    Generate a GBNF rule for a list of a given element type in XML format.
 
     :param element_type: The type of the elements in the list (e.g., 'string').
     :return: A string representing the GBNF rule for a list of the given type.
     """
     rule_name = f"{map_pydantic_type_to_gbnf(element_type)}-list"
     element_rule = map_pydantic_type_to_gbnf(element_type)
-    list_rule = rf'{rule_name} ::= "["  {element_rule} (","  {element_rule})* "]"'
+    list_rule = rf'{rule_name} ::= "<items>" ({element_rule})* "</items>"'
     return list_rule
 
 
@@ -117,16 +117,16 @@ def get_members_structure(cls, rule_name):
         members = [f'"\\"{member.value}\\""' for name, member in cls.__members__.items()]
         return f"{cls.__name__.lower()} ::= " + " | ".join(members)
     if cls.__annotations__ and cls.__annotations__ != {}:
-        result = f'{rule_name} ::= "{{"'
-        # Modify this comprehension
+        result = f'{rule_name} ::= "<{rule_name}>"'
+        # Modify for XML structure
         members = [
-            f'  "\\"{name}\\"" ":"  {map_pydantic_type_to_gbnf(param_type)}'
+            f'  "<{name}>"  {map_pydantic_type_to_gbnf(param_type)}  "</{name}>"'
             for name, param_type in cls.__annotations__.items()
             if name != "self"
         ]
 
-        result += '"," '.join(members)
-        result += '  "}"'
+        result += ' '.join(members)
+        result += f'  "</{rule_name}>"'
         return result
     if rule_name == "custom-class-any":
         result = f"{rule_name} ::= "
@@ -135,16 +135,16 @@ def get_members_structure(cls, rule_name):
 
     init_signature = inspect.signature(cls.__init__)
     parameters = init_signature.parameters
-    result = f'{rule_name} ::=  "{{"'
-    # Modify this comprehension too
+    result = f'{rule_name} ::=  "<{rule_name}>"'
+    # Modify for XML structure
     members = [
-        f'  "\\"{name}\\"" ":"  {map_pydantic_type_to_gbnf(param.annotation)}'
+        f'  "<{name}>"  {map_pydantic_type_to_gbnf(param.annotation)}  "</{name}>"'
         for name, param in parameters.items()
         if name != "self" and param.annotation != inspect.Parameter.empty
     ]
 
-    result += '", "'.join(members)
-    result += '  "}"'
+    result += ' '.join(members)
+    result += f'  "</{rule_name}>"'
     return result
 
 
@@ -318,13 +318,13 @@ def generate_gbnf_rule_for_type(
     elif get_origin(field_type) is Literal:
         # Handle Literal types by extracting the literal values
         literal_values = get_args(field_type)
-        # Format each literal value as a quoted string in the grammar
-        literal_str_values = [f'"\\"{str(val)}\\"" ' for val in literal_values]
+        # Format each literal value as an XML element in the grammar
+        literal_str_values = [f'"<value>{str(val)}</value>" ' for val in literal_values]
         literal_rule = f"{model_name}-{field_name} ::= {' | '.join(literal_str_values)}"
         rules.append(literal_rule)
         gbnf_type, rules = model_name + "-" + field_name, rules
     elif isclass(field_type) and issubclass(field_type, Enum):
-        enum_values = [f'"\\"{e.value}\\""' for e in field_type]  # Adding escaped quotes
+        enum_values = [f'"<value>{e.value}</value>"' for e in field_type]
         enum_rule = f"{model_name}-{field_name} ::= {' | '.join(enum_values)}"
         rules.append(enum_rule)
         gbnf_type, rules = model_name + "-" + field_name, rules
@@ -334,7 +334,7 @@ def generate_gbnf_rule_for_type(
             model_name, f"{field_name}-element", element_type, is_optional, processed_models, created_rules
         )
         rules.extend(additional_rules)
-        array_rule = f"""{model_name}-{field_name} ::= "[" ws {element_rule_name} ("," ws {element_rule_name})*  "]" """
+        array_rule = f"""{model_name}-{field_name} ::= "<items>" ws ({element_rule_name})* ws "</items>" """
         rules.append(array_rule)
         gbnf_type, rules = model_name + "-" + field_name, rules
 
@@ -344,7 +344,7 @@ def generate_gbnf_rule_for_type(
             model_name, f"{field_name}-element", element_type, is_optional, processed_models, created_rules
         )
         rules.extend(additional_rules)
-        array_rule = f"""{model_name}-{field_name} ::= "[" ws {element_rule_name} ("," ws {element_rule_name})*  "]" """
+        array_rule = f"""{model_name}-{field_name} ::= "<items>" ws ({element_rule_name})* ws "</items>" """
         rules.append(array_rule)
         gbnf_type, rules = model_name + "-" + field_name, rules
 
@@ -359,7 +359,7 @@ def generate_gbnf_rule_for_type(
         additional_value_type, additional_value_rules = generate_gbnf_rule_for_type(
             model_name, f"{field_name}-value-type", value_type, is_optional, processed_models, created_rules
         )
-        gbnf_type = rf'{gbnf_type} ::= "{{"  ( {additional_key_type} ": "  {additional_value_type} ("," "\n" ws {additional_key_type} ":"  {additional_value_type})*  )? "}}" '
+        gbnf_type = rf'{gbnf_type} ::= "<dictionary>"  ( "<entry>" "<key>" {additional_key_type} "</key>" "<value>" {additional_value_type} "</value>" "</entry>" ("\n" ws "<entry>" "<key>" {additional_key_type} "</key>" "<value>" {additional_value_type} "</value>" "</entry>")*  )? "</dictionary>" '
 
         rules.extend(additional_key_rules)
         rules.extend(additional_value_rules)
@@ -474,15 +474,12 @@ def generate_gbnf_grammar(
     model: type[BaseModel], processed_models: set[type[BaseModel]], created_rules: dict[str, list[str]]
 ) -> tuple[list[str], bool]:
     """
-
-    Generate GBnF Grammar
-
-    Generates a GBnF grammar for a given model.
+    Generate XML-based GBNF grammar for a given model.
 
     :param model: A Pydantic model class to generate the grammar for. Must be a subclass of BaseModel.
     :param processed_models: A set of already processed models to prevent infinite recursion.
     :param created_rules: A dict containing already created rules to prevent duplicates.
-    :return: A list of GBnF grammar rules in string format. And two booleans indicating if an extra markdown or triple quoted string is in the grammar.
+    :return: A list of GBnF grammar rules in string format. And a boolean indicating if special string handling is needed.
     Example Usage:
     ```
     model = MyModel
@@ -541,23 +538,24 @@ def generate_gbnf_grammar(
         if not look_for_markdown_code_block and not look_for_triple_quoted_string:
             if rule_name not in created_rules:
                 created_rules[rule_name] = additional_rules
-            model_rule_parts.append(f' ws "\\"{field_name}\\"" ":" ws {rule_name}')  # Adding escaped quotes
+            # XML Format
+            model_rule_parts.append(f' ws "<{field_name}>" ws {rule_name} ws "</{field_name}>"')
             nested_rules.extend(additional_rules)
         else:
             has_triple_quoted_string = look_for_triple_quoted_string
             has_markdown_code_block = look_for_markdown_code_block
 
-    fields_joined = r' "," "\n" '.join(model_rule_parts)
-    model_rule = rf'{model_name} ::= "{{" "\n" {fields_joined} "\n" ws "}}"'
+    fields_joined = r' "\n" '.join(model_rule_parts)
+    model_rule = rf'{model_name} ::= "<{model_name}>" "\n" {fields_joined} "\n" ws "</{model_name}>"'
 
     has_special_string = False
     if has_triple_quoted_string:
-        model_rule += '"\\n" ws "}"'
-        model_rule += '"\\n" triple-quoted-string'
+        model_rule += '"\\n" "<triple_quoted_string>"'
+        model_rule += '  triple-quoted-string  "</triple_quoted_string>"'
         has_special_string = True
     if has_markdown_code_block:
-        model_rule += '"\\n" ws "}"'
-        model_rule += '"\\n" markdown-code-block'
+        model_rule += '"\\n" "<markdown_code_block>"'
+        model_rule += '  markdown-code-block  "</markdown_code_block>"'
         has_special_string = True
     all_rules = [model_rule] + nested_rules
 
@@ -571,15 +569,15 @@ def generate_gbnf_grammar_from_pydantic_models(
     list_of_outputs: bool = False,
 ) -> str:
     """
-    Generate GBNF Grammar from Pydantic Models.
+    Generate XML-based GBNF Grammar from Pydantic Models.
 
-    This method takes a list of Pydantic models and uses them to generate a GBNF grammar string. The generated grammar string can be used for parsing and validating data using the generated
-    * grammar.
+    This method takes a list of Pydantic models and uses them to generate a GBNF grammar string
+    with XML format. The generated grammar string can be used for parsing and validating data.
 
     Args:
         models (list[type[BaseModel]]): A list of Pydantic models to generate the grammar from.
-        outer_object_name (str): Outer object name for the GBNF grammar. If None, no outer object will be generated. Eg. "function" for function calling.
-        outer_object_content (str): Content for the outer rule in the GBNF grammar. Eg. "function_parameters" or "params" for function calling.
+        outer_object_name (str): Outer object name for the GBNF grammar. If None, no outer object will be generated.
+        outer_object_content (str): Content for the outer rule in the GBNF grammar.
         list_of_outputs (str, optional): Allows a list of output objects
     Returns:
         str: The generated GBNF grammar string.
@@ -601,7 +599,7 @@ def generate_gbnf_grammar_from_pydantic_models(
             all_rules.extend(model_rules)
 
         if list_of_outputs:
-            root_rule = r'root ::= (" "| "\n") "[" ws grammar-models ("," ws grammar-models)* ws "]"' + "\n" 
+            root_rule = r'root ::= (" "| "\n") "<items>" ws grammar-models ("," ws grammar-models)* ws "</items>"' + "\n" 
         else:
             root_rule = r'root ::= (" "| "\n") grammar-models' + "\n"
         root_rule += "grammar-models ::= " + " | ".join(
@@ -612,13 +610,13 @@ def generate_gbnf_grammar_from_pydantic_models(
     elif outer_object_name is not None:
         if list_of_outputs:
             root_rule = (
-                rf'root ::= (" "| "\n") "[" ws {format_model_and_field_name(outer_object_name)} ("," ws {format_model_and_field_name(outer_object_name)})* ws "]"'
+                rf'root ::= (" "| "\n") "<{outer_object_name}s>" ws {format_model_and_field_name(outer_object_name)} ("," ws {format_model_and_field_name(outer_object_name)})* ws "</{outer_object_name}s>"'
                 + "\n"
             )
         else:
             root_rule = f"root ::= {format_model_and_field_name(outer_object_name)}\n"
 
-        model_rule = rf'{format_model_and_field_name(outer_object_name)} ::= (" "| "\n") "{{" ws "\"{outer_object_name}\""  ":" ws grammar-models'
+        model_rule = rf'{format_model_and_field_name(outer_object_name)} ::= (" "| "\n") "<{outer_object_name}>" ws grammar-models'
 
         fields_joined = " | ".join(
             [rf"{format_model_and_field_name(model.__name__)}-grammar-model" for model in models]
@@ -629,7 +627,7 @@ def generate_gbnf_grammar_from_pydantic_models(
         for model in models:
             mod_rule = rf"{format_model_and_field_name(model.__name__)}-grammar-model ::= "
             mod_rule += (
-                rf'"\"{model.__name__}\"" "," ws "\"{outer_object_content}\"" ":" ws {format_model_and_field_name(model.__name__)}'
+                rf'"<model-type>{model.__name__}</model-type>" ws "<{outer_object_content}>" ws {format_model_and_field_name(model.__name__)} ws "</{outer_object_content}>"'
                 + "\n"
             )
             mod_rules.append(mod_rule)
@@ -639,7 +637,7 @@ def generate_gbnf_grammar_from_pydantic_models(
             model_rules, has_special_string = generate_gbnf_grammar(model, processed_models, created_rules)
 
             if not has_special_string:
-                model_rules[0] += r'"\n" ws "}"'
+                model_rules[0] += f' "</{outer_object_name}>"'
 
             all_rules.extend(model_rules)
 
@@ -649,13 +647,13 @@ def generate_gbnf_grammar_from_pydantic_models(
 
 def get_primitive_grammar(grammar):
     """
-    Returns the needed GBNF primitive grammar for a given GBNF grammar string.
+    Returns the needed GBNF primitive grammar for XML-based GBNF grammar.
 
     Args:
         grammar (str): The string containing the GBNF grammar.
 
     Returns:
-        str: GBNF primitive grammar string.
+        str: GBNF primitive grammar string for XML.
     """
     type_list: list[type[object]] = []
     if "string-list" in grammar:
@@ -667,17 +665,19 @@ def get_primitive_grammar(grammar):
     if "float-list" in grammar:
         type_list.append(float)
     additional_grammar = [generate_list_rule(t) for t in type_list]
+    
+    # XML primitives
     primitive_grammar = r"""
-boolean ::= "true" | "false"
-null ::= "null"
-string ::= "\"" (
-        [^"\\] |
+boolean ::= "<boolean>true</boolean>" | "<boolean>false</boolean>"
+null ::= "<null>null</null>"
+string ::= "<string>" (
+        [^<\\] |
         "\\" (["\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F])
-      )* "\"" ws
+      )* "</string>" ws
 ws ::= ([ \t\n] ws)?
-float ::= ("-"? ([0-9] | [1-9] [0-9]*)) ("." [0-9]+)? ([eE] [-+]? [0-9]+)? ws
-
-integer ::= [0-9]+"""
+float ::= "<float>" ("-"? ([0-9] | [1-9] [0-9]*)) ("." [0-9]+)? ([eE] [-+]? [0-9]+)? "</float>" ws
+integer ::= "<integer>" [0-9]+ "</integer>"
+"""
 
     any_block = ""
     if "custom-class-any" in grammar:
@@ -685,16 +685,16 @@ integer ::= [0-9]+"""
 value ::= object | array | string | number | boolean | null
 
 object ::=
-  "{" ws (
-            string ":" ws value
-    ("," ws string ":" ws value)*
-  )? "}" ws
+  "<object>" ws (
+            "<field>" string "</field>" "<value>" ws value "</value>"
+    ("," ws "<field>" string "</field>" "<value>" ws value "</value>")*
+  )? "</object>" ws
 
 array  ::=
-  "[" ws (
+  "<array>" ws (
             value
     ("," ws value)*
-  )? "]" ws
+  )? "</array>" ws
 
 number ::= integer | float"""
 
@@ -711,6 +711,7 @@ closing-triple-ticks ::= "```" "\n"'''
 triple-quoted-string ::= triple-quotes triple-quoted-string-content triple-quotes
 triple-quoted-string-content ::= ( [^'] | "'" [^'] |  "'"  "'" [^']  )*
 triple-quotes ::= "'''" """
+    
     return "\n" + "\n".join(additional_grammar) + any_block + primitive_grammar + markdown_code_block_grammar
 
 
