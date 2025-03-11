@@ -5,7 +5,7 @@ import inspect
 from inspect import getdoc, isclass
 import json
 import re
-from typing import Any, Callable, List, Optional, TYPE_CHECKING, Union, get_args, get_origin
+from typing import Any, Callable, List, Optional, TYPE_CHECKING, Union, get_args, get_origin, Annotated
 
 from docstring_parser import parse
 from pydantic import BaseModel, create_model
@@ -49,7 +49,10 @@ class PydanticDataType(Enum):
 
 
 def map_pydantic_type_to_gbnf(pydantic_type: type[Any]) -> str:
-    if isclass(pydantic_type) and issubclass(pydantic_type, str):
+    if get_origin(pydantic_type) is Annotated:
+        return map_pydantic_type_to_gbnf(get_args(pydantic_type)[0])
+
+    elif isclass(pydantic_type) and issubclass(pydantic_type, str):
         return PydanticDataType.STRING.value
     elif isclass(pydantic_type) and issubclass(pydantic_type, bool):
         return PydanticDataType.BOOLEAN.value
@@ -292,6 +295,12 @@ def generate_gbnf_rule_for_type(
     :return: Tuple containing the GBNF type and a list of additional rules.
     :rtype: tuple[str, list]
     """
+
+    if get_origin(field_type) is Annotated:
+        extracted_type = get_args(field_type)[0]
+        return generate_gbnf_rule_for_type(
+            model_name, field_name, extracted_type, is_optional, processed_models, created_rules, field_info
+        )
     rules = []
 
     field_name = format_model_and_field_name(field_name)
@@ -737,6 +746,8 @@ def generate_markdown_documentation(
             for name, field_type in model.__annotations__.items():
                 # if name == "markdown_code_block":
                 #    continue
+                if get_origin(field_type) == Annotated:
+                    field_type = get_args(field_type)[0]
                 if get_origin(field_type) == list:
                     element_type = get_args(field_type)[0]
                     if isclass(element_type) and issubclass(element_type, BaseModel):
@@ -873,6 +884,9 @@ def generate_text_documentation(
             for name, field_type in model.__annotations__.items():
                 # if name == "markdown_code_block":
                 #    continue
+                if get_origin(field_type) == Annotated:
+                    field_type = get_args(field_type)[0]
+
                 if get_origin(field_type) == list:
                     element_type = get_args(field_type)[0]
                     if isclass(element_type) and issubclass(element_type, BaseModel):
