@@ -658,12 +658,12 @@ def get_primitive_grammar(grammar):
 
     # XML primitives with simpler representation
     primitive_grammar = r"""
-boolean ::= "true" | "false"
-null ::= "null"
-string ::= ([^<])*
+boolean ::= nl "true" | nl "false"
+null ::= nl "null"
+string ::= nl ([^<])*
 nl ::= "\n"
-float ::= "-"? [0-9]+ ("." [0-9]+)?
-integer ::= [0-9]+
+float ::= nl "-"? [0-9]+ ("." [0-9]+)?
+integer ::= nl [0-9]+
 """
 
     any_block = ""
