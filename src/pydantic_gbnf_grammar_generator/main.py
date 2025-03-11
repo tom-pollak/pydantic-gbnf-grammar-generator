@@ -92,10 +92,8 @@ def map_pydantic_type_to_gbnf(pydantic_type: type[Any]) -> str:
 
 
 def format_model_and_field_name(model_name: str) -> str:
-    parts = re.findall("[A-Z][^A-Z]*", model_name)
-    if not parts:  # Check if the list is empty
-        return model_name.lower().replace("_", "-")
-    return "-".join(part.lower().replace("_", "-") for part in parts)
+    # No longer convert to kebab-case, just return the original name
+    return model_name
 
 
 def generate_list_rule(element_type):
@@ -107,15 +105,15 @@ def generate_list_rule(element_type):
     """
     rule_name = f"{map_pydantic_type_to_gbnf(element_type)}-list"
     element_rule = map_pydantic_type_to_gbnf(element_type)
-    list_rule = rf'{rule_name} ::= "<items>" ({element_rule})* "</items>"'
+    list_rule = rf'{rule_name} ::= "<items>" ws ("<item>" ws {element_rule} ws "</item>" ws)* "</items>"'
     return list_rule
 
 
 def get_members_structure(cls, rule_name):
     if issubclass(cls, Enum):
         # Handle Enum types
-        members = [f'"\\"{member.value}\\""' for name, member in cls.__members__.items()]
-        return f"{cls.__name__.lower()} ::= " + " | ".join(members)
+        members = [f'"{member.value}"' for name, member in cls.__members__.items()]
+        return f"{cls.__name__} ::= " + " | ".join(members)
     if cls.__annotations__ and cls.__annotations__ != {}:
         result = f'{rule_name} ::= "<{rule_name}>"'
         # Modify for XML structure
@@ -318,35 +316,35 @@ def generate_gbnf_rule_for_type(
     elif get_origin(field_type) is Literal:
         # Handle Literal types by extracting the literal values
         literal_values = get_args(field_type)
-        # Format each literal value as an XML element in the grammar
-        literal_str_values = [f'"<value>{str(val)}</value>" ' for val in literal_values]
-        literal_rule = f"{model_name}-{field_name} ::= {' | '.join(literal_str_values)}"
+        # Format each literal value directly in the grammar
+        literal_str_values = [f'"{str(val)}" ' for val in literal_values]
+        literal_rule = f"{model_name}{field_name} ::= {' | '.join(literal_str_values)}"
         rules.append(literal_rule)
-        gbnf_type, rules = model_name + "-" + field_name, rules
+        gbnf_type, rules = model_name + field_name, rules
     elif isclass(field_type) and issubclass(field_type, Enum):
-        enum_values = [f'"<value>{e.value}</value>"' for e in field_type]
-        enum_rule = f"{model_name}-{field_name} ::= {' | '.join(enum_values)}"
+        enum_values = [f'"{e.value}"' for e in field_type]
+        enum_rule = f"{model_name}{field_name} ::= {' | '.join(enum_values)}"
         rules.append(enum_rule)
-        gbnf_type, rules = model_name + "-" + field_name, rules
+        gbnf_type, rules = model_name + field_name, rules
     elif get_origin(field_type) == list:  # Array
         element_type = get_args(field_type)[0]
         element_rule_name, additional_rules = generate_gbnf_rule_for_type(
-            model_name, f"{field_name}-element", element_type, is_optional, processed_models, created_rules
+            model_name, f"{field_name}Element", element_type, is_optional, processed_models, created_rules
         )
         rules.extend(additional_rules)
-        array_rule = f"""{model_name}-{field_name} ::= "<items>" ws ({element_rule_name})* ws "</items>" """
+        array_rule = f"""{model_name}{field_name} ::= "<items>" ws ("<item>" ws {element_rule_name} ws "</item>" ws)* "</items>" """
         rules.append(array_rule)
-        gbnf_type, rules = model_name + "-" + field_name, rules
+        gbnf_type, rules = model_name + field_name, rules
 
     elif get_origin(field_type) == set or field_type == set:  # Array
         element_type = get_args(field_type)[0]
         element_rule_name, additional_rules = generate_gbnf_rule_for_type(
-            model_name, f"{field_name}-element", element_type, is_optional, processed_models, created_rules
+            model_name, f"{field_name}Element", element_type, is_optional, processed_models, created_rules
         )
         rules.extend(additional_rules)
-        array_rule = f"""{model_name}-{field_name} ::= "<items>" ws ({element_rule_name})* ws "</items>" """
+        array_rule = f"""{model_name}{field_name} ::= "<items>" ws ("<item>" ws {element_rule_name} ws "</item>" ws)* "</items>" """
         rules.append(array_rule)
-        gbnf_type, rules = model_name + "-" + field_name, rules
+        gbnf_type, rules = model_name + field_name, rules
 
     elif gbnf_type.startswith("custom-class-"):
         rules.append(get_members_structure(field_type, gbnf_type))
@@ -538,7 +536,7 @@ def generate_gbnf_grammar(
         if not look_for_markdown_code_block and not look_for_triple_quoted_string:
             if rule_name not in created_rules:
                 created_rules[rule_name] = additional_rules
-            # XML Format
+            # XML Format with exact field names
             model_rule_parts.append(f' ws "<{field_name}>" ws {rule_name} ws "</{field_name}>"')
             nested_rules.extend(additional_rules)
         else:
@@ -666,17 +664,17 @@ def get_primitive_grammar(grammar):
         type_list.append(float)
     additional_grammar = [generate_list_rule(t) for t in type_list]
     
-    # XML primitives
+    # XML primitives with simpler representation
     primitive_grammar = r"""
-boolean ::= "<boolean>true</boolean>" | "<boolean>false</boolean>"
-null ::= "<null>null</null>"
-string ::= "<string>" (
+boolean ::= "true" | "false"
+null ::= "null"
+string ::= (
         [^<\\] |
         "\\" (["\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F])
-      )* "</string>" ws
+      )* ws
 ws ::= ([ \t\n] ws)?
-float ::= "<float>" ("-"? ([0-9] | [1-9] [0-9]*)) ("." [0-9]+)? ([eE] [-+]? [0-9]+)? "</float>" ws
-integer ::= "<integer>" [0-9]+ "</integer>"
+float ::= ("-"? ([0-9] | [1-9] [0-9]*)) ("." [0-9]+)? ([eE] [-+]? [0-9]+)? ws
+integer ::= [0-9]+
 """
 
     any_block = ""
