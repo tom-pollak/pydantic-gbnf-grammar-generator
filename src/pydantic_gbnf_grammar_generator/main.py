@@ -547,7 +547,7 @@ def generate_gbnf_grammar(
         has_special_string = True
     if has_markdown_code_block:
         model_rule += 'nl "<markdown_code_block>" nl'
-        model_rule += 'markdown-code-block nl "</markdown_code_block>" nl' 
+        model_rule += 'markdown-code-block nl "</markdown_code_block>" nl'
         has_special_string = True
     all_rules = [model_rule] + nested_rules
 
@@ -591,9 +591,9 @@ def generate_gbnf_grammar_from_pydantic_models(
             all_rules.extend(model_rules)
 
         if list_of_outputs:
-            root_rule = r'root ::= (" "| "\n") "<items>" ws grammar-models ("," ws grammar-models)* ws "</items>"' + "\n"
+            root_rule = r'root ::= "<items>" nl grammar-models ("," nl grammar-models)* nl "</items>" nl' + "\n"
         else:
-            root_rule = r'root ::= (" "| "\n") grammar-models' + "\n"
+            root_rule = r'root ::= grammar-models' + "\n"
         root_rule += "grammar-models ::= " + " | ".join(
             [model.__name__ for model in models]
         )
@@ -602,13 +602,13 @@ def generate_gbnf_grammar_from_pydantic_models(
     elif outer_object_name is not None:
         if list_of_outputs:
             root_rule = (
-                rf'root ::= (" "| "\n") "<{outer_object_name}s>" ws {outer_object_name} ("," ws {outer_object_name})* ws "</{outer_object_name}s>"'
+                rf'root ::= "<{outer_object_name}s>" nl {outer_object_name} ("," nl {outer_object_name})* nl "</{outer_object_name}s>" nl'
                 + "\n"
             )
         else:
             root_rule = f"root ::= {outer_object_name}\n"
 
-        model_rule = rf'{outer_object_name} ::= (" "| "\n") "<{outer_object_name}>" ws grammar-models'
+        model_rule = rf'{outer_object_name} ::= "<{outer_object_name}>" nl grammar-models'
 
         fields_joined = " | ".join(
             [rf"{model.__name__}-grammar-model" for model in models]
@@ -619,7 +619,7 @@ def generate_gbnf_grammar_from_pydantic_models(
         for model in models:
             mod_rule = rf"{model.__name__}-grammar-model ::= "
             mod_rule += (
-                rf'"<model-type>{model.__name__}</model-type>" ws "<{outer_object_content}>" ws {model.__name__} ws "</{outer_object_content}>"'
+                rf'"<model-type>{model.__name__}</model-type>" nl "<{outer_object_content}>" nl {model.__name__} nl "</{outer_object_content}>"'
                 + "\n"
             )
             mod_rules.append(mod_rule)
@@ -663,7 +663,6 @@ def get_primitive_grammar(grammar):
 boolean ::= "true" | "false"
 null ::= "null"
 string ::= ([^<])*
-ws ::= [ \t\n]{0,2}
 nl ::= "\n"
 float ::= "-"? [0-9]+ ("." [0-9]+)?
 integer ::= [0-9]+
