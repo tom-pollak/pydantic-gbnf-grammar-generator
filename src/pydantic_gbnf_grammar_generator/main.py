@@ -107,7 +107,7 @@ def generate_list_rule(element_type):
 def get_members_structure(cls, rule_name):
     if issubclass(cls, Enum):
         # Handle Enum types
-        members = [f'"{member.value}"' for name, member in cls.__members__.items()]
+        members = [f'nl "{member.value}"' for name, member in cls.__members__.items()]
         return f"{cls.__name__} ::= " + " | ".join(members)
     if cls.__annotations__ and cls.__annotations__ != {}:
         result = f'{rule_name} ::= nl "<{rule_name}>" nl'
@@ -310,13 +310,13 @@ def generate_gbnf_rule_for_type(
     elif get_origin(field_type) is Literal:
         # Handle Literal types by extracting the literal values
         literal_values = get_args(field_type)
-        # Format each literal value directly in the grammar
-        literal_str_values = [f'"{str(val)}" ' for val in literal_values]
+        # Format each literal value directly in the grammar with newlines
+        literal_str_values = [f'nl "{str(val)}" ' for val in literal_values]
         literal_rule = f"{model_name}{field_name} ::= {' | '.join(literal_str_values)}"
         rules.append(literal_rule)
         gbnf_type, rules = model_name + field_name, rules
     elif isclass(field_type) and issubclass(field_type, Enum):
-        enum_values = [f'"{e.value}"' for e in field_type]
+        enum_values = [f'nl "{e.value}"' for e in field_type]
         enum_rule = f"{model_name}{field_name} ::= {' | '.join(enum_values)}"
         rules.append(enum_rule)
         gbnf_type, rules = model_name + field_name, rules
