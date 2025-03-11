@@ -5,7 +5,7 @@ import inspect
 from inspect import getdoc, isclass
 import json
 import re
-from typing import Any, Callable, List, Optional, TYPE_CHECKING, Union, get_args, get_origin, Annotated
+from typing import Any, Callable, List, Literal, Optional, TYPE_CHECKING, Union, get_args, get_origin, Annotated
 
 from docstring_parser import parse
 from pydantic import BaseModel, create_model
@@ -51,6 +51,10 @@ class PydanticDataType(Enum):
 def map_pydantic_type_to_gbnf(pydantic_type: type[Any]) -> str:
     if get_origin(pydantic_type) is Annotated:
         return map_pydantic_type_to_gbnf(get_args(pydantic_type)[0])
+    
+    elif get_origin(pydantic_type) is Literal:
+        # Handle Literal types similar to Enum types
+        return PydanticDataType.ENUM.value
 
     elif isclass(pydantic_type) and issubclass(pydantic_type, str):
         return PydanticDataType.STRING.value
@@ -311,6 +315,14 @@ def generate_gbnf_rule_for_type(
         nested_model_rules, _ = generate_gbnf_grammar(field_type, processed_models, created_rules)
         rules.extend(nested_model_rules)
         gbnf_type, rules = nested_model_name, rules
+    elif get_origin(field_type) is Literal:
+        # Handle Literal types by extracting the literal values
+        literal_values = get_args(field_type)
+        # Format each literal value as a quoted string in the grammar
+        literal_str_values = [f'"\\"{str(val)}\\"" ' for val in literal_values]
+        literal_rule = f"{model_name}-{field_name} ::= {' | '.join(literal_str_values)}"
+        rules.append(literal_rule)
+        gbnf_type, rules = model_name + "-" + field_name, rules
     elif isclass(field_type) and issubclass(field_type, Enum):
         enum_values = [f'"\\"{e.value}\\""' for e in field_type]  # Adding escaped quotes
         enum_rule = f"{model_name}-{field_name} ::= {' | '.join(enum_values)}"
