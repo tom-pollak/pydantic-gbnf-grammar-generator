@@ -660,7 +660,7 @@ def get_primitive_grammar(grammar):
     primitive_grammar = r"""
 boolean ::= nl "true" | nl "false"
 null ::= nl "null"
-string ::= nl ([^<])*
+string ::= nl [^\n<] ([^<])*
 nl ::= "\n"
 float ::= nl "-"? [0-9]+ ("." [0-9]+)?
 integer ::= nl [0-9]+
