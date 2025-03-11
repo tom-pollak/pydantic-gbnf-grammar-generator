@@ -351,7 +351,7 @@ def generate_gbnf_rule_for_type(
         additional_value_type, additional_value_rules = generate_gbnf_rule_for_type(
             model_name, f"{field_name}-value-type", value_type, is_optional, processed_models, created_rules
         )
-        gbnf_type = rf'{gbnf_type} ::= nl "<dictionary>" ("<entry>" nl "<key>" {additional_key_type} nl "</key>" nl "<value>" {additional_value_type} nl "</value>" nl "</entry>")* nl "</dictionary>" '
+        gbnf_type = rf'{gbnf_type} ::= nl "<dictionary>" nl ("<entry>" nl "<key>" {additional_key_type} nl "</key>" nl "<value>" {additional_value_type} nl "</value>" nl "</entry>" nl)* nl "</dictionary>" '
 
         rules.extend(additional_key_rules)
         rules.extend(additional_value_rules)
@@ -606,7 +606,7 @@ def generate_gbnf_grammar_from_pydantic_models(
         else:
             root_rule = f"root ::= {outer_object_name}\n"
 
-        model_rule = rf'{outer_object_name} ::= nl "<{outer_object_name}>" nl grammar-models'
+        model_rule = rf'{outer_object_name} ::= nl "<{outer_object_name}>" grammar-models nl "</{outer_object_name}>"'
 
         fields_joined = " | ".join(
             [rf"{model.__name__}-grammar-model" for model in models]
@@ -671,23 +671,23 @@ integer ::= nl [0-9]+
         any_block = """
 value ::= object | array | string | number | boolean | null
 
-object ::= "<object>" nl ("<field>" nl string nl "</field>" nl "<value>" nl value nl "</value>" nl)* nl "</object>" nl
+object ::= nl "<object>" nl ("<field>" nl string nl "</field>" nl "<value>" value nl "</value>" nl)* nl "</object>"
 
-array ::= "<array>" nl (value nl)* nl "</array>" nl
+array ::= nl "<array>" nl (value nl)* nl "</array>"
 
 number ::= integer | float"""
 
     markdown_code_block_grammar = ""
     if "markdown-code-block" in grammar:
         markdown_code_block_grammar = r'''
-markdown-code-block ::= opening-triple-ticks markdown-code-block-content closing-triple-ticks
+markdown-code-block ::= nl opening-triple-ticks markdown-code-block-content closing-triple-ticks
 markdown-code-block-content ::= ( [^`] | "`" [^`] |  "`"  "`" [^`]  )*
 opening-triple-ticks ::= "```" "python" "\n" | "```" "c" "\n" | "```" "cpp" "\n" | "```" "txt" "\n" | "```" "text" "\n" | "```" "json" "\n" | "```" "javascript" "\n" | "```" "css" "\n" | "```" "html" "\n" | "```" "markdown" "\n"
 closing-triple-ticks ::= "```" "\n"'''
 
     if "triple-quoted-string" in grammar:
         markdown_code_block_grammar = r"""
-triple-quoted-string ::= triple-quotes triple-quoted-string-content triple-quotes
+triple-quoted-string ::= nl triple-quotes triple-quoted-string-content triple-quotes
 triple-quoted-string-content ::= ( [^'] | "'" [^'] |  "'"  "'" [^']  )*
 triple-quotes ::= "'''" """
 
