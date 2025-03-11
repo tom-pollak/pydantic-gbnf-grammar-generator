@@ -51,7 +51,7 @@ class PydanticDataType(Enum):
 def map_pydantic_type_to_gbnf(pydantic_type: type[Any]) -> str:
     if get_origin(pydantic_type) is Annotated:
         return map_pydantic_type_to_gbnf(get_args(pydantic_type)[0])
-    
+
     elif get_origin(pydantic_type) is Literal:
         # Handle Literal types similar to Enum types
         return PydanticDataType.ENUM.value
@@ -68,7 +68,7 @@ def map_pydantic_type_to_gbnf(pydantic_type: type[Any]) -> str:
         return PydanticDataType.ENUM.value
 
     elif isclass(pydantic_type) and issubclass(pydantic_type, BaseModel):
-        return format_model_and_field_name(pydantic_type.__name__)
+        return pydantic_type.__name__
     elif get_origin(pydantic_type) is list:
         element_type = get_args(pydantic_type)[0]
         return f"{map_pydantic_type_to_gbnf(element_type)}-list"
@@ -83,17 +83,12 @@ def map_pydantic_type_to_gbnf(pydantic_type: type[Any]) -> str:
         element_type = get_args(pydantic_type)[0]
         return f"optional-{map_pydantic_type_to_gbnf(element_type)}"
     elif isclass(pydantic_type):
-        return f"{PydanticDataType.CUSTOM_CLASS.value}-{format_model_and_field_name(pydantic_type.__name__)}"
+        return f"{PydanticDataType.CUSTOM_CLASS.value}-{pydantic_type.__name__}"
     elif get_origin(pydantic_type) is dict:
         key_type, value_type = get_args(pydantic_type)
-        return f"custom-dict-key-type-{format_model_and_field_name(map_pydantic_type_to_gbnf(key_type))}-value-type-{format_model_and_field_name(map_pydantic_type_to_gbnf(value_type))}"
+        return f"custom-dict-key-type-{map_pydantic_type_to_gbnf(key_type)}-value-type-{map_pydantic_type_to_gbnf(value_type)}"
     else:
         return "unknown"
-
-
-def format_model_and_field_name(model_name: str) -> str:
-    # No longer convert to kebab-case, just return the original name
-    return model_name
 
 
 def generate_list_rule(element_type):
@@ -305,11 +300,10 @@ def generate_gbnf_rule_for_type(
         )
     rules = []
 
-    field_name = format_model_and_field_name(field_name)
     gbnf_type = map_pydantic_type_to_gbnf(field_type)
 
     if isclass(field_type) and issubclass(field_type, BaseModel):
-        nested_model_name = format_model_and_field_name(field_type.__name__)
+        nested_model_name = field_type.__name__
         nested_model_rules, _ = generate_gbnf_grammar(field_type, processed_models, created_rules)
         rules.extend(nested_model_rules)
         gbnf_type, rules = nested_model_name, rules
@@ -491,7 +485,7 @@ def generate_gbnf_grammar(
         return [], False
 
     processed_models.add(model)
-    model_name = format_model_and_field_name(model.__name__)
+    model_name = model.__name__
 
     if not issubclass(model, BaseModel):
         # For non-Pydantic classes, generate model_fields from __annotations__ or __init__
@@ -524,7 +518,7 @@ def generate_gbnf_grammar(
             is_optional = field_info.is_required is False and get_origin(field_type) is Optional
         rule_name, additional_rules = generate_gbnf_rule_for_type(
             model_name,
-            format_model_and_field_name(field_name),
+            field_name,
             field_type,
             is_optional,
             processed_models,
@@ -597,35 +591,35 @@ def generate_gbnf_grammar_from_pydantic_models(
             all_rules.extend(model_rules)
 
         if list_of_outputs:
-            root_rule = r'root ::= (" "| "\n") "<items>" ws grammar-models ("," ws grammar-models)* ws "</items>"' + "\n" 
+            root_rule = r'root ::= (" "| "\n") "<items>" ws grammar-models ("," ws grammar-models)* ws "</items>"' + "\n"
         else:
             root_rule = r'root ::= (" "| "\n") grammar-models' + "\n"
         root_rule += "grammar-models ::= " + " | ".join(
-            [format_model_and_field_name(model.__name__) for model in models]
+            [model.__name__ for model in models]
         )
         all_rules.insert(0, root_rule)
         return "\n".join(all_rules)
     elif outer_object_name is not None:
         if list_of_outputs:
             root_rule = (
-                rf'root ::= (" "| "\n") "<{outer_object_name}s>" ws {format_model_and_field_name(outer_object_name)} ("," ws {format_model_and_field_name(outer_object_name)})* ws "</{outer_object_name}s>"'
+                rf'root ::= (" "| "\n") "<{outer_object_name}s>" ws {outer_object_name} ("," ws {outer_object_name})* ws "</{outer_object_name}s>"'
                 + "\n"
             )
         else:
-            root_rule = f"root ::= {format_model_and_field_name(outer_object_name)}\n"
+            root_rule = f"root ::= {outer_object_name}\n"
 
-        model_rule = rf'{format_model_and_field_name(outer_object_name)} ::= (" "| "\n") "<{outer_object_name}>" ws grammar-models'
+        model_rule = rf'{outer_object_name} ::= (" "| "\n") "<{outer_object_name}>" ws grammar-models'
 
         fields_joined = " | ".join(
-            [rf"{format_model_and_field_name(model.__name__)}-grammar-model" for model in models]
+            [rf"{model.__name__}-grammar-model" for model in models]
         )
 
         grammar_model_rules = f"\ngrammar-models ::= {fields_joined}"
         mod_rules = []
         for model in models:
-            mod_rule = rf"{format_model_and_field_name(model.__name__)}-grammar-model ::= "
+            mod_rule = rf"{model.__name__}-grammar-model ::= "
             mod_rule += (
-                rf'"<model-type>{model.__name__}</model-type>" ws "<{outer_object_content}>" ws {format_model_and_field_name(model.__name__)} ws "</{outer_object_content}>"'
+                rf'"<model-type>{model.__name__}</model-type>" ws "<{outer_object_content}>" ws {model.__name__} ws "</{outer_object_content}>"'
                 + "\n"
             )
             mod_rules.append(mod_rule)
@@ -663,17 +657,14 @@ def get_primitive_grammar(grammar):
     if "float-list" in grammar:
         type_list.append(float)
     additional_grammar = [generate_list_rule(t) for t in type_list]
-    
+
     # XML primitives with simpler representation
     primitive_grammar = r"""
 boolean ::= "true" | "false"
 null ::= "null"
-string ::= (
-        [^<\\] |
-        "\\" (["\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F])
-      )* ws
-ws ::= ([ \t\n] ws)?
-float ::= ("-"? ([0-9] | [1-9] [0-9]*)) ("." [0-9]+)? ([eE] [-+]? [0-9]+)? ws
+string ::= ([^<])*
+ws ::= [ \t\n]{0,2}
+float ::= "-"? [0-9]+ ("." [0-9]+)?
 integer ::= [0-9]+
 """
 
@@ -709,7 +700,7 @@ closing-triple-ticks ::= "```" "\n"'''
 triple-quoted-string ::= triple-quotes triple-quoted-string-content triple-quotes
 triple-quoted-string-content ::= ( [^'] | "'" [^'] |  "'"  "'" [^']  )*
 triple-quotes ::= "'''" """
-    
+
     return "\n" + "\n".join(additional_grammar) + any_block + primitive_grammar + markdown_code_block_grammar
 
 
@@ -778,7 +769,7 @@ def generate_markdown_documentation(
             and hasattr(model.Config, "json_schema_extra")
             and "example" in model.Config.json_schema_extra
         ):
-            documentation += f"  Expected Example Output for {format_model_and_field_name(model.__name__)}:\n"
+            documentation += f"  Expected Example Output for {model.__name__}:\n"
             json_example = json.dumps(model.Config.json_schema_extra["example"])
             documentation += format_multiline_description(json_example, 2) + "\n"
 
@@ -808,7 +799,7 @@ def generate_field_markdown(
 
     if get_origin(field_type) == list:
         element_type = get_args(field_type)[0]
-        field_text = f"{indent}{field_name} ({format_model_and_field_name(field_type.__name__)} of {format_model_and_field_name(element_type.__name__)})"
+        field_text = f"{indent}{field_name} ({field_type.__name__} of {element_type.__name__})"
         if field_description != "":
             field_text += ":\n"
         else:
@@ -817,14 +808,14 @@ def generate_field_markdown(
         element_types = get_args(field_type)
         types = []
         for element_type in element_types:
-            types.append(format_model_and_field_name(element_type.__name__))
+            types.append(element_type.__name__)
         field_text = f"{indent}{field_name} ({' or '.join(types)})"
         if field_description != "":
             field_text += ":\n"
         else:
             field_text += "\n"
     else:
-        field_text = f"{indent}{field_name} ({format_model_and_field_name(field_type.__name__)})"
+        field_text = f"{indent}{field_name} ({field_type.__name__})"
         if field_description != "":
             field_text += ":\n"
         else:
@@ -922,7 +913,7 @@ def generate_text_documentation(
             and hasattr(model.Config, "json_schema_extra")
             and "example" in model.Config.json_schema_extra
         ):
-            documentation += f"  Expected Example Output for {format_model_and_field_name(model.__name__)}:\n"
+            documentation += f"  Expected Example Output for {model.__name__}:\n"
             json_example = json.dumps(model.Config.json_schema_extra["example"])
             documentation += format_multiline_description(json_example, 2) + "\n"
 
@@ -952,7 +943,7 @@ def generate_field_text(
 
     if get_origin(field_type) == list:
         element_type = get_args(field_type)[0]
-        field_text = f"{indent}{field_name} ({format_model_and_field_name(field_type.__name__)} of {format_model_and_field_name(element_type.__name__)})"
+        field_text = f"{indent}{field_name} ({field_type.__name__} of {element_type.__name__})"
         if field_description != "":
             field_text += ":\n"
         else:
@@ -961,14 +952,14 @@ def generate_field_text(
         element_types = get_args(field_type)
         types = []
         for element_type in element_types:
-            types.append(format_model_and_field_name(element_type.__name__))
+            types.append(element_type.__name__)
         field_text = f"{indent}{field_name} ({' or '.join(types)})"
         if field_description != "":
             field_text += ":\n"
         else:
             field_text += "\n"
     else:
-        field_text = f"{indent}{field_name} ({format_model_and_field_name(field_type.__name__)})"
+        field_text = f"{indent}{field_name} ({field_type.__name__})"
         if field_description != "":
             field_text += ":\n"
         else:
@@ -1275,7 +1266,7 @@ def create_dynamic_models_from_dictionaries(dictionaries: list[dict[str, Any]]):
     """
     dynamic_models = []
     for func in dictionaries:
-        model_name = format_model_and_field_name(func.get("name", ""))
+        model_name = func.get("name", "")
         dyn_model = convert_dictionary_to_pydantic_model(func, model_name)
         dynamic_models.append(dyn_model)
     return dynamic_models
@@ -1284,7 +1275,7 @@ def create_dynamic_models_from_dictionaries(dictionaries: list[dict[str, Any]]):
 def map_grammar_names_to_pydantic_model_class(pydantic_model_list):
     output = {}
     for model in pydantic_model_list:
-        output[format_model_and_field_name(model.__name__)] = model
+        output[model.__name__] = model
 
     return output
 
