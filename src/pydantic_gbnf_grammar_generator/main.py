@@ -100,7 +100,7 @@ def generate_list_rule(element_type):
     """
     rule_name = f"{map_pydantic_type_to_gbnf(element_type)}-list"
     element_rule = map_pydantic_type_to_gbnf(element_type)
-    list_rule = rf'{rule_name} ::= "<items>" nl ("<item>" nl {element_rule} nl "</item>" nl)* "</items>" nl'
+    list_rule = rf'{rule_name} ::= "nl <items>" nl ("<item>" nl {element_rule} nl "</item>" nl)* nl "</items>"'
     return list_rule
 
 
@@ -110,16 +110,16 @@ def get_members_structure(cls, rule_name):
         members = [f'"{member.value}"' for name, member in cls.__members__.items()]
         return f"{cls.__name__} ::= " + " | ".join(members)
     if cls.__annotations__ and cls.__annotations__ != {}:
-        result = f'{rule_name} ::= "<{rule_name}>" nl'
-        # Modify for XML structure with explicit newlines for all tags
+        result = f'{rule_name} ::= "nl <{rule_name}>" nl'
+        # Modify for XML structure with newlines after opening and before closing tags
         members = [
-            f'"<{name}>" nl {map_pydantic_type_to_gbnf(param_type)} nl "</{name}>" nl'
+            f'"nl <{name}>" nl {map_pydantic_type_to_gbnf(param_type)} nl "</{name}>"'
             for name, param_type in cls.__annotations__.items()
             if name != "self"
         ]
 
         result += ' '.join(members)
-        result += f'"</{rule_name}>" nl'
+        result += f'nl "</{rule_name}>"'
         return result
     if rule_name == "custom-class-any":
         result = f"{rule_name} ::= "
@@ -128,16 +128,16 @@ def get_members_structure(cls, rule_name):
 
     init_signature = inspect.signature(cls.__init__)
     parameters = init_signature.parameters
-    result = f'{rule_name} ::= "<{rule_name}>" nl'
-    # Modify for XML structure with explicit newlines for all tags
+    result = f'{rule_name} ::= "nl <{rule_name}>" nl'
+    # Modify for XML structure with newlines after opening and before closing tags
     members = [
-        f'"<{name}>" nl {map_pydantic_type_to_gbnf(param.annotation)} nl "</{name}>" nl'
+        f'"nl <{name}>" nl {map_pydantic_type_to_gbnf(param.annotation)} nl "</{name}>"'
         for name, param in parameters.items()
         if name != "self" and param.annotation != inspect.Parameter.empty
     ]
 
     result += ' '.join(members)
-    result += f'"</{rule_name}>" nl'
+    result += f'nl "</{rule_name}>"'
     return result
 
 
@@ -326,7 +326,7 @@ def generate_gbnf_rule_for_type(
             model_name, f"{field_name}Element", element_type, is_optional, processed_models, created_rules
         )
         rules.extend(additional_rules)
-        array_rule = f"""{model_name}{field_name} ::= "<items>" nl ("<item>" nl {element_rule_name} nl "</item>" nl)* "</items>" nl """
+        array_rule = f"""{model_name}{field_name} ::= "nl <items>" nl ("<item>" nl {element_rule_name} nl "</item>" nl)* nl "</items>" """
         rules.append(array_rule)
         gbnf_type, rules = model_name + field_name, rules
 
@@ -336,7 +336,7 @@ def generate_gbnf_rule_for_type(
             model_name, f"{field_name}Element", element_type, is_optional, processed_models, created_rules
         )
         rules.extend(additional_rules)
-        array_rule = f"""{model_name}{field_name} ::= "<items>" nl ("<item>" nl {element_rule_name} nl "</item>" nl)* "</items>" nl """
+        array_rule = f"""{model_name}{field_name} ::= "nl <items>" nl ("<item>" nl {element_rule_name} nl "</item>" nl)* nl "</items>" """
         rules.append(array_rule)
         gbnf_type, rules = model_name + field_name, rules
 
@@ -351,7 +351,7 @@ def generate_gbnf_rule_for_type(
         additional_value_type, additional_value_rules = generate_gbnf_rule_for_type(
             model_name, f"{field_name}-value-type", value_type, is_optional, processed_models, created_rules
         )
-        gbnf_type = rf'{gbnf_type} ::= "<dictionary>" nl ("<entry>" nl "<key>" nl {additional_key_type} nl "</key>" nl "<value>" nl {additional_value_type} nl "</value>" nl "</entry>" nl)* "</dictionary>" nl'
+        gbnf_type = rf'{gbnf_type} ::= "nl <dictionary>" nl ("<entry>" nl "<key>" nl {additional_key_type} nl "</key>" nl "<value>" nl {additional_value_type} nl "</value>" nl "</entry>" nl)* nl "</dictionary>" '
 
         rules.extend(additional_key_rules)
         rules.extend(additional_value_rules)
@@ -530,24 +530,24 @@ def generate_gbnf_grammar(
         if not look_for_markdown_code_block and not look_for_triple_quoted_string:
             if rule_name not in created_rules:
                 created_rules[rule_name] = additional_rules
-            # XML Format with exact field names and newlines after every tag
-            model_rule_parts.append(f'"<{field_name}>" nl {rule_name} nl "</{field_name}>" nl')
+            # XML Format with newlines after opening tags and before closing tags
+            model_rule_parts.append(f'"nl <{field_name}>" nl {rule_name} nl "</{field_name}>"' )
             nested_rules.extend(additional_rules)
         else:
             has_triple_quoted_string = look_for_triple_quoted_string
             has_markdown_code_block = look_for_markdown_code_block
 
     fields_joined = ' '.join(model_rule_parts)
-    model_rule = rf'{model_name} ::= "<{model_name}>" nl {fields_joined} "</{model_name}>" nl'
+    model_rule = rf'{model_name} ::= "nl <{model_name}>" nl {fields_joined} nl "</{model_name}>"'
 
     has_special_string = False
     if has_triple_quoted_string:
-        model_rule += 'nl "<triple_quoted_string>" nl'
-        model_rule += 'triple-quoted-string nl "</triple_quoted_string>" nl'
+        model_rule += 'nl "<triple_quoted_string>"'
+        model_rule += 'nl triple-quoted-string nl "</triple_quoted_string>"'
         has_special_string = True
     if has_markdown_code_block:
-        model_rule += 'nl "<markdown_code_block>" nl'
-        model_rule += 'markdown-code-block nl "</markdown_code_block>" nl'
+        model_rule += '"nl <markdown_code_block>" nl'
+        model_rule += 'nl markdown-code-block nl "</markdown_code_block>"'
         has_special_string = True
     all_rules = [model_rule] + nested_rules
 
@@ -591,7 +591,7 @@ def generate_gbnf_grammar_from_pydantic_models(
             all_rules.extend(model_rules)
 
         if list_of_outputs:
-            root_rule = r'root ::= "<items>" nl grammar-models ("," nl grammar-models)* nl "</items>" nl' + "\n"
+            root_rule = r'root ::= "nl <items>" nl grammar-models ("," nl grammar-models)* nl "</items>"' + "\n"
         else:
             root_rule = r'root ::= grammar-models' + "\n"
         root_rule += "grammar-models ::= " + " | ".join(
@@ -602,7 +602,7 @@ def generate_gbnf_grammar_from_pydantic_models(
     elif outer_object_name is not None:
         if list_of_outputs:
             root_rule = (
-                rf'root ::= "<{outer_object_name}s>" nl {outer_object_name} ("," nl {outer_object_name})* nl "</{outer_object_name}s>" nl'
+                rf'root ::= "<{outer_object_name}s>" nl {outer_object_name} ("," nl {outer_object_name})* nl "</{outer_object_name}s>"'
                 + "\n"
             )
         else:
@@ -619,7 +619,7 @@ def generate_gbnf_grammar_from_pydantic_models(
         for model in models:
             mod_rule = rf"{model.__name__}-grammar-model ::= "
             mod_rule += (
-                rf'"<model-type>{model.__name__}</model-type>" nl "<{outer_object_content}>" nl {model.__name__} nl "</{outer_object_content}>"'
+                rf'"nl <model-type>{model.__name__}</model-type>" nl "nl <{outer_object_content}>" nl {model.__name__} nl "</{outer_object_content}>"'
                 + "\n"
             )
             mod_rules.append(mod_rule)
@@ -673,9 +673,9 @@ integer ::= [0-9]+
         any_block = """
 value ::= object | array | string | number | boolean | null
 
-object ::= "<object>" nl ("<field>" nl string nl "</field>" nl "<value>" nl value nl "</value>" nl)* "</object>" nl
+object ::= "<object>" nl ("<field>" nl string nl "</field>" nl "<value>" nl value nl "</value>" nl)* nl "</object>" nl
 
-array ::= "<array>" nl (value nl)* "</array>" nl
+array ::= "<array>" nl (value nl)* nl "</array>" nl
 
 number ::= integer | float"""
 
